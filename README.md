@@ -36,7 +36,6 @@ Download the latest release from the **Releases** tab and run it from your termi
 ```bash
 ./bunnydsp       # Opens in a native window
 ./bunnydsp --web # Opens in your default browser
-
 ```
 
 ### Option 2: Run from source
@@ -44,7 +43,6 @@ Download the latest release from the **Releases** tab and run it from your termi
 ```bash
 pip install -r requirements.txt
 python app.py
-
 ```
 
 ### Option 3: Build from source
@@ -56,7 +54,6 @@ pip install -r requirements.txt -r requirements-build.txt
 ./build.sh
 ./dist/bunnydsp           # Native window
 ./dist/bunnydsp --web     # Browser interface
-
 ```
 
 ### Permissions
@@ -69,7 +66,6 @@ Create a file at `/etc/udev/rules.d/99-tanchjim-bunny.rules` with the following 
 
 ```text
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="31b2", ATTRS{idProduct}=="1112", GROUP="audio", MODE="0660", TAG+="uaccess"
-
 ```
 
 Then, reload `udev` and add your user to the `audio` group:
@@ -78,7 +74,6 @@ Then, reload `udev` and add your user to the `audio` group:
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 sudo usermod -aG audio $USER
-
 ```
 
 *Note: You must log out and back in (or reboot) for the group changes to take effect.*
@@ -89,7 +84,6 @@ Run the script as root, preserving your environment variables so Flask's hidden 
 
 ```bash
 sudo -E python3 app.py
-
 ```
 
 *Without the `-E` flag, environment variables like `DISPLAY` are stripped, preventing the webview window from opening.*
@@ -127,7 +121,6 @@ bunnydsp/
 ├── build.sh               # PyInstaller build script
 ├── requirements.txt       # Runtime dependencies
 └── requirements-build.txt # Build dependencies
-
 ```
 
 ---
@@ -185,7 +178,3 @@ The HID protocol used in this project was reverse-engineered from:
 * [jeromeof/devicePEQ](https://github.com/jeromeof/devicePEQ) (specifically `ktmicroUsbHidHandler.js` and the Bunny DSP configuration)
 * Live USB packet captures performed on firmware v1.01 hardware
 * USB descriptor dumps gathered from the device's HID interface 3
-
-## License
-
-MIT
