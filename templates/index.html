@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bunny DSP</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <svg class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+    <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/>
+    <path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+  </svg>
+  <h1>Bunny DSP</h1>
+  <span class="status">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">Connecting…</span>
+    <span class="device-id" id="chipId">-</span>
+  </span>
+</header>
+
+<div id="disconnectOverlay" class="disconnect-overlay">
+    <div class="disconnect-card">
+      <div class="disconnect-icon">🔌</div>
+      <strong>Device Disconnected</strong>
+      <p>Please connect your Tanchjim Bunny DSP IEMs.</p>
+      <button class="btn accent" onclick="retryConnection()">↻ Retry</button>
+    </div>
+  </div>
+
+  <div id="permDeniedOverlay" class="disconnect-overlay">
+    <div class="disconnect-card" style="max-width:500px">
+      <div class="disconnect-icon">🔒</div>
+      <strong>Permission Denied</strong>
+      <p style="text-align:left;line-height:1.6">
+        Cannot access the Bunny DSP USB device.<br><br>
+        <b>Option 1 - udev rule (permanent):</b><br>
+        <code style="font-size:0.7rem;background:var(--surface2);padding:2px 6px;border-radius:4px;display:block;margin:4px 0;word-break:break-all">echo 'SUBSYSTEM=="hidraw", ATTRS{idVendor}=="31b2", ATTRS{idProduct}=="1112", GROUP="audio", MODE="0660", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/99-tanchjim-bunny.rules</code>
+        Then: <code style="font-size:0.7rem">sudo usermod -aG audio $USER</code> and log out/in.<br><br>
+        <b>Option 2 - sudo (one-time):</b><br>
+        <code style="font-size:0.7rem">sudo -E ./bunnydsp</code> (preserves display for native window)<br>
+        or <code style="font-size:0.7rem">sudo -E ./bunnydsp --web</code> (browser mode)
+      </p>
+      <button class="btn accent" onclick="retryConnection()">↻ Retry</button>
+    </div>
+  </div>
+
+  <div class="banner-bar"></div>
+
+  <div class="container" id="app">
+  <div id="notify" class="notify"></div>
+
+  <div class="toolbar">
+    <button id="readBtn" class="btn accent" onclick="readAll()">↻ Read</button>
+    <button id="commitBtn" class="btn accent" onclick="commit()" disabled>✓ Commit</button>
+    <button id="bypassBtn" class="btn" onclick="toggleBypass()">⏻ Disable EQ</button>
+    <button id="clearBtn" class="btn danger sm" onclick="clearAll()">Clear</button>
+    <button id="exportBtn" class="btn sm" onclick="exportConfig()">↓ Export</button>
+    <button id="importBtn" class="btn sm" onclick="document.getElementById('importFile').click()">↑ Import</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importConfig(event)">
+    <span style="margin-left:auto;font-size:0.78rem;color:var(--sub);letter-spacing:0.3px" id="slotInfo"></span>
+  </div>
+
+  <div class="eq-canvas-wrap">
+    <canvas id="eqCanvas"></canvas>
+  </div>
+
+  <div class="pregain-row">
+    <label>Mic Gain (ADC)</label>
+    <input type="range" id="micGainSlider" min="-60" max="12" value="0" step="1" oninput="updateMicGain()">
+    <input type="number" id="micGainInput" value="0" min="-60" max="12" step="1" onchange="updateMicGain()">
+    <span class="unit">dB</span>
+  </div>
+
+  <div id="bands"></div>
+</div>
+
+<button class="asano-toggle" onclick="toggleAsano()" title="Toggle Asano">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="6 9 12 15 18 9"/>
+  </svg>
+</button>
+<div class="corner-asano-wrap">
+  <img class="corner-asano" src="/static/asano.png" alt="Asano">
+</div>
+
+<script src="/static/app.js"></script>
+
+</body>
+</html>
