@@ -3,3 +3,4 @@ build/
 dist/
 *.spec
 AGENTS.md
+REGISTER-MAP.md

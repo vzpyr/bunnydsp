@@ -43,7 +43,6 @@ header h1 {
   font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: 0.8px;
-  text-transform: uppercase;
   color: var(--text);
 }
 
@@ -241,8 +240,8 @@ header .icon {
   font-size: 0.72rem;
 }
 
-/* pre-gain */
-.pregain-row {
+/* volume controls */
+.volume-row {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -254,20 +253,20 @@ header .icon {
   padding: 14px 20px;
 }
 
-.pregain-row label {
+.volume-row label {
   font-weight: 600;
   font-size: 0.82rem;
   min-width: 66px;
   letter-spacing: 0.4px;
 }
 
-.pregain-row input[type=range] {
+.volume-row input[type=range] {
   flex: 1;
   max-width: 200px;
   accent-color: var(--accent);
 }
 
-.pregain-row input[type=number] {
+.volume-row input[type=number] {
   width: 64px;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -279,13 +278,13 @@ header .icon {
   text-align: center;
 }
 
-.pregain-row input[type=number]:focus {
+.volume-row input[type=number]:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(212, 163, 115, 0.12);
 }
 
-.pregain-row .unit {
+.volume-row .unit {
   font-size: 0.75rem;
   color: var(--sub);
 }
@@ -520,7 +519,7 @@ canvas {
   header h1 { font-size: 0.9rem; }
   .band { grid-template-columns: 1fr 1fr; gap: 10px; }
   .band-number { grid-column: span 2; }
-  .pregain-row { padding: 12px 16px; }
+  .volume-row { padding: 12px 16px; }
   .status { font-size: 0.7rem; }
   .device-id { font-size: 0.65rem; padding: 1px 8px; }
 }

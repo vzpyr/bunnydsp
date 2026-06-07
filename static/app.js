@@ -1,3 +1,5 @@
+let leftVol = 0;
+let rightVol = 0;
 let micGain = 0;
 let eqEnabled = true;
 let hasChanges = false;
@@ -9,6 +11,8 @@ let _pollTimer = null;
 let _pollFails = 0;
 let _needsReread = false;
 let _initialReadDone = false;
+let _dots = [];
+let _drag = null;
 
 const FREQ_POINTS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 const disabled = [false, false, false, false, false];
@@ -19,6 +23,13 @@ drawEQ();
 startPolling();
 
 new ResizeObserver(drawEQ).observe(document.getElementById('eqCanvas'));
+(function() {
+  const c = document.getElementById('eqCanvas');
+  c.addEventListener('mousedown', _onMouseDown);
+  c.addEventListener('mousemove', _onMouseMove);
+  c.addEventListener('mouseup', _onMouseUp);
+  c.addEventListener('mouseleave', _onMouseUp);
+})();
 
 function createBandHTML(i) {
   return `
@@ -104,6 +115,26 @@ function enforceFreqOrder() {
   }
 }
 
+function updateLeftVol() {
+  const slider = document.getElementById('leftVolSlider');
+  const input = document.getElementById('leftVolInput');
+  const val = parseFloat(input.value);
+  if (document.activeElement === input) slider.value = val;
+  else input.value = slider.value;
+  leftVol = parseFloat(slider.value);
+  if (!_reading) markChanged();
+}
+
+function updateRightVol() {
+  const slider = document.getElementById('rightVolSlider');
+  const input = document.getElementById('rightVolInput');
+  const val = parseFloat(input.value);
+  if (document.activeElement === input) slider.value = val;
+  else input.value = slider.value;
+  rightVol = parseFloat(slider.value);
+  if (!_reading) markChanged();
+}
+
 function updateMicGain() {
   const slider = document.getElementById('micGainSlider');
   const input = document.getElementById('micGainInput');
@@ -112,7 +143,58 @@ function updateMicGain() {
   else input.value = slider.value;
   micGain = parseFloat(slider.value);
   if (!_reading) markChanged();
-  drawEQ();
+}
+
+function _canvasCoords(e) {
+  const c = document.getElementById('eqCanvas');
+  const r = c.getBoundingClientRect();
+  return { mx: e.clientX - r.left, my: e.clientY - r.top, W: r.width, H: r.height };
+}
+
+function _onMouseDown(e) {
+  const co = _canvasCoords(e);
+  for (let i = _dots.length - 1; i >= 0; i--) {
+    const d = _dots[i];
+    if ((co.mx - d.x) ** 2 + (co.my - d.y) ** 2 <= 64) {
+      _drag = { band: d.band };
+      document.getElementById('eqCanvas').style.cursor = 'grabbing';
+      e.preventDefault();
+      return;
+    }
+  }
+}
+
+function _onMouseMove(e) {
+  const canvas = document.getElementById('eqCanvas');
+  if (!_drag) {
+    const co = _canvasCoords(e);
+    let over = false;
+    for (const d of _dots) {
+      if ((co.mx - d.x) ** 2 + (co.my - d.y) ** 2 <= 64) { over = true; break; }
+    }
+    canvas.style.cursor = over ? 'grab' : '';
+    return;
+  }
+  const co = _canvasCoords(e);
+  const b = _drag.band;
+  const fMin = 20, fMax = 20000, dbMin = -15, dbMax = 15;
+  let freq = Math.round(fMin * Math.pow(fMax / fMin, Math.max(0, Math.min(1, co.mx / co.W))));
+  if (b > 0) freq = Math.max(freq, parseFloat(document.getElementById('freq' + (b - 1)).value) + 1);
+  if (b < 4) freq = Math.min(freq, parseFloat(document.getElementById('freq' + (b + 1)).value) - 1);
+  freq = Math.max(20, Math.min(20000, freq));
+  let gain = Math.round((dbMax - (co.my / co.H) * (dbMax - dbMin)) * 10) / 10;
+  gain = Math.max(-12, Math.min(12, gain));
+  const fs = document.getElementById('freq' + b);
+  fs.min = b > 0 ? parseFloat(document.getElementById('freq' + (b - 1)).value) + 1 : 20;
+  fs.max = b < 4 ? parseFloat(document.getElementById('freq' + (b + 1)).value) - 1 : 20000;
+  fs.value = freq;
+  document.getElementById('gain' + b).value = gain;
+  bandChanged(b);
+}
+
+function _onMouseUp() {
+  _drag = null;
+  document.getElementById('eqCanvas').style.cursor = '';
 }
 
 function markChanged() {
@@ -140,6 +222,10 @@ function syncButtonStates() {
   const inputs = document.querySelectorAll('.band input, .band select');
   const canInteract = connected && !isWorking && !permDenied;
   inputs.forEach(el => { el.disabled = !canInteract; });
+  document.getElementById('leftVolSlider').disabled = !canInteract;
+  document.getElementById('leftVolInput').disabled = !canInteract;
+  document.getElementById('rightVolSlider').disabled = !canInteract;
+  document.getElementById('rightVolInput').disabled = !canInteract;
   document.getElementById('micGainSlider').disabled = !canInteract;
   document.getElementById('micGainInput').disabled = !canInteract;
 
@@ -158,6 +244,7 @@ function drawEQ() {
   ctx.scale(dpr, dpr);
   const W = rect.width, H = rect.height;
   ctx.clearRect(0, 0, W, H);
+  _dots = [];
 
   const fMin = 20, fMax = 20000;
   const dbMin = -15, dbMax = 15;
@@ -199,7 +286,31 @@ function drawEQ() {
   ctx.stroke();
 
   // composite frequency response
-  const steps = 600;
+  const steps = 800;
+
+  // Individual band curves (faint, behind composite)
+  for (let b = 0; b < 5; b++) {
+    if (disabled[b]) continue;
+    const ft = document.getElementById('type' + b)?.value || 'PK';
+    const fc = parseFloat(document.getElementById('freq' + b)?.value || 1000);
+    const g = parseFloat(document.getElementById('gain' + b)?.value || 0);
+    const q = parseFloat(document.getElementById('q' + b)?.value || 1);
+    if (g === 0) continue;
+    ctx.beginPath();
+    let bfirst = true;
+    for (let i = 0; i <= steps; i++) {
+      const f = fMin * Math.pow(fMax / fMin, i / steps);
+      let db = filterResponse(f, fc, g, q, ft);
+      db = Math.max(dbMin, Math.min(dbMax, db));
+      const x = freqToX(f), y = dbToY(db);
+      if (bfirst) { ctx.moveTo(x, y); bfirst = false; } else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = 'rgba(42, 75, 127, 0.18)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Composite curve
   ctx.beginPath();
   let first = true;
   for (let i = 0; i <= steps; i++) {
@@ -241,6 +352,7 @@ function drawEQ() {
     const g = parseFloat(document.getElementById('gain' + b)?.value || 0);
     if (g === 0) continue;
     const x = freqToX(fc), y = dbToY(g);
+    _dots.push({ x, y, band: b });
     ctx.beginPath();
     ctx.arc(x, y, 5, 0, Math.PI * 2);
     ctx.fillStyle = '#d3dee8';
@@ -401,6 +513,14 @@ async function readAll(quiet = false) {
       }
     }
 
+    document.getElementById('leftVolSlider').value = data.left_vol || 0;
+    document.getElementById('leftVolInput').value = data.left_vol || 0;
+    leftVol = data.left_vol || 0;
+
+    document.getElementById('rightVolSlider').value = data.right_vol || 0;
+    document.getElementById('rightVolInput').value = data.right_vol || 0;
+    rightVol = data.right_vol || 0;
+
     document.getElementById('micGainSlider').value = data.mic_gain || 0;
     document.getElementById('micGainInput').value = data.mic_gain || 0;
     micGain = data.mic_gain || 0;
@@ -443,12 +563,14 @@ async function commit() {
         disabled: disabled[i]
       });
     }
+    const leftVolVal = parseFloat(document.getElementById('leftVolSlider').value);
+    const rightVolVal = parseFloat(document.getElementById('rightVolSlider').value);
     const micGainVal = parseFloat(document.getElementById('micGainSlider').value);
 
     const data = await api('/api/commit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filters, mic_gain: micGainVal })
+      body: JSON.stringify({ filters, left_vol: leftVolVal, right_vol: rightVolVal, mic_gain: micGainVal })
     });
 
     if (data) {
@@ -474,6 +596,12 @@ async function clearAll() {
     document.getElementById('toggle' + i).textContent = 'Enabled';
     document.getElementById('toggle' + i).className = 'band-toggle';
   }
+  document.getElementById('leftVolSlider').value = 0;
+  document.getElementById('leftVolInput').value = 0;
+  leftVol = 0;
+  document.getElementById('rightVolSlider').value = 0;
+  document.getElementById('rightVolInput').value = 0;
+  rightVol = 0;
   document.getElementById('micGainSlider').value = 0;
   document.getElementById('micGainInput').value = 0;
   micGain = 0;
@@ -502,6 +630,8 @@ function getConfig() {
   }
   return {
     format: 'bunnydsp-v1',
+    leftVol: parseFloat(document.getElementById('leftVolSlider').value),
+    rightVol: parseFloat(document.getElementById('rightVolSlider').value),
     micGain: parseFloat(document.getElementById('micGainSlider').value),
     bands
   };
@@ -552,10 +682,19 @@ function importConfig(event) {
 
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-    const pg = clamp(parseFloat(cfg.micGain ?? cfg.pregain) || 0, -60, 12);
-    document.getElementById('micGainSlider').value = pg;
-    document.getElementById('micGainInput').value = pg;
-    micGain = pg;
+    const lv = clamp(parseFloat(cfg.leftVol) || 0, -60, 0);
+    const rv = clamp(parseFloat(cfg.rightVol) || 0, -60, 0);
+    document.getElementById('leftVolSlider').value = lv;
+    document.getElementById('leftVolInput').value = lv;
+    leftVol = lv;
+    document.getElementById('rightVolSlider').value = rv;
+    document.getElementById('rightVolInput').value = rv;
+    rightVol = rv;
+
+    const mg = clamp(parseFloat(cfg.micGain) || 0, -60, 12);
+    document.getElementById('micGainSlider').value = mg;
+    document.getElementById('micGainInput').value = mg;
+    micGain = mg;
 
     _reading = true;
     for (let i = 0; i < Math.min(cfg.bands.length, 5); i++) {

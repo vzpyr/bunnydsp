@@ -69,8 +69,22 @@
     <canvas id="eqCanvas"></canvas>
   </div>
 
-  <div class="pregain-row">
-    <label>Mic Gain (ADC)</label>
+  <div class="volume-row">
+    <label>L Vol</label>
+    <input type="range" id="leftVolSlider" min="-60" max="0" value="0" step="1" oninput="updateLeftVol()">
+    <input type="number" id="leftVolInput" value="0" min="-60" max="0" step="1" onchange="updateLeftVol()">
+    <span class="unit">dB</span>
+  </div>
+
+  <div class="volume-row">
+    <label>R Vol</label>
+    <input type="range" id="rightVolSlider" min="-60" max="0" value="0" step="1" oninput="updateRightVol()">
+    <input type="number" id="rightVolInput" value="0" min="-60" max="0" step="1" onchange="updateRightVol()">
+    <span class="unit">dB</span>
+  </div>
+
+  <div class="volume-row">
+    <label>Mic Gain</label>
     <input type="range" id="micGainSlider" min="-60" max="12" value="0" step="1" oninput="updateMicGain()">
     <input type="number" id="micGainInput" value="0" min="-60" max="12" step="1" onchange="updateMicGain()">
     <span class="unit">dB</span>

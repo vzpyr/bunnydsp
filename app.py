@@ -31,9 +31,10 @@ CMD_WRITE  = 0x57
 CMD_COMMIT = 0x53
 CMD_CLEAR  = 0x43
 
-REG_ENABLE  = 0x24
-REG_GLOBAL  = 0x66
-FILTER_BASE = 0x26
+REG_ENABLE   = 0x24
+REG_MIC_GAIN = 0x65  # mic gain, -60 to +12 dB, *2 encoding
+REG_VOLUME   = 0x66  # L/R digital volume (byte 6 = L, byte 7 = R)
+FILTER_BASE  = 0x26
 
 DISABLED_SLOT = 0x02
 CUSTOM_SLOT   = 0x03
@@ -121,6 +122,7 @@ def ensure_connected() -> bool:
     global fd
     if fd is None:
         return False
+    # drain any stale responses; BlockingIOError means fd is healthy
     try:
         os.read(fd, 1)
     except BlockingIOError:
@@ -310,17 +312,29 @@ def api_read():
                     else {'q': 1.0, 'type': 'PK'}
                 filters.append({**parsed, **qparsed})
 
-        pg = send_and_read(REG_GLOBAL, CMD_READ, build_read_packet(REG_GLOBAL))
+        bal = send_and_read(REG_VOLUME, CMD_READ, build_read_packet(REG_VOLUME))
+        left_vol = 0
+        right_vol = 0
+        if bal:
+            signed_l = bal[6] if bal[6] <= 127 else bal[6] - 256
+            signed_r = bal[7] if bal[7] <= 127 else bal[7] - 256
+            left_vol = signed_l / 2
+            right_vol = signed_r / 2
+
+        mic_data = send_and_read(REG_MIC_GAIN, CMD_READ,
+                                 build_read_packet(REG_MIC_GAIN))
         mic_gain = 0
-        if pg:
-            raw = pg[6]
-            mic_gain = raw if raw <= 127 else raw - 256
+        if mic_data:
+            raw_mic = mic_data[6]
+            signed_mic = raw_mic if raw_mic <= 127 else raw_mic - 256
+            mic_gain = signed_mic / 2
 
         chip_id = read_chip_id()
 
         return jsonify({
             'connected': True,
-            'filters': filters, 'mic_gain': mic_gain,
+            'filters': filters, 'left_vol': left_vol, 'right_vol': right_vol,
+            'mic_gain': mic_gain,
             'slot': slot, 'enabled': slot == CUSTOM_SLOT,
             'chip_id': chip_id,
         })
@@ -337,7 +351,9 @@ def api_commit():
         if not body:
             return _error_response('No data provided', 400)
         filters = body.get('filters', [])
-        mic_gain = body.get('mic_gain', 0)
+        left_vol = body.get('left_vol', 0)
+        right_vol = body.get('right_vol', 0)
+        mic_gain = body.get('mic_gain', body.get('micGain', 0))
 
         valid_types = {'PK', 'LSQ', 'HSQ'}
 
@@ -360,11 +376,26 @@ def api_commit():
             write_report(build_gain_freq_packet(gf_reg, freq, gain))
             write_report(build_q_type_packet(q_reg, q, ftype))
 
-        pg_clamped = int(round(_clamp(float(mic_gain), -60, 12)))
-        if pg_clamped < 0:
-            pg_clamped &= 0xFF
-        write_report(bytes([REG_GLOBAL, 0, 0, 0, CMD_WRITE, 0,
-                            pg_clamped, 0, 0, 0]))
+        # digital dac volume
+        left_clamped = _clamp(float(left_vol), -60, 0)
+        right_clamped = _clamp(float(right_vol), -60, 0)
+        left_raw = int(round(left_clamped * 2))
+        if left_raw < 0:
+            left_raw += 256
+        right_raw = int(round(right_clamped * 2))
+        if right_raw < 0:
+            right_raw += 256
+        write_report(bytes([REG_VOLUME, 0, 0, 0, CMD_WRITE, 0,
+                            left_raw & 0xFF, right_raw & 0xFF, 0, 0]))
+
+        # mic gain (register 0x65)
+        mic_clamped = _clamp(float(mic_gain), -60, 12)
+        mic_raw = int(round(mic_clamped * 2))
+        if mic_raw < 0:
+            mic_raw += 256
+        write_report(bytes([REG_MIC_GAIN, 0, 0, 0, CMD_WRITE, 0,
+                            mic_raw & 0xFF, 0, 0, 0]))
+
         write_report(bytes([0, 0, 0, 0, CMD_COMMIT, 0, 0, 0, 0, 0]))
 
         ensure_connected()
