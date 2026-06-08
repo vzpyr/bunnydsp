@@ -42,8 +42,8 @@ Download the latest release from the **Releases** tab and run it from your termi
 
 ```bash
 pip install -r requirements.txt
-python app.py             # Opens in a native window
-python app.py --web       # Opens in your default browser
+python app.py       # Opens in a native window
+python app.py --web # Opens in your default browser
 ```
 
 ### Option 3: Build from source
