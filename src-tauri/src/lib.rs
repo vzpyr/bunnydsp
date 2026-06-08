@@ -1,6 +1,7 @@
 mod hid;
 
 use hid::{CommitFilter, HidState, HidStateMutex, CUSTOM_SLOT};
+use tauri::Manager;
 
 #[tauri::command]
 async fn status(state: tauri::State<'_, HidStateMutex>) -> Result<hid::StatusResult, String> {
@@ -71,6 +72,14 @@ pub fn run() {
     tauri::Builder::default()
         .manage(hid_mutex)
         .invoke_handler(tauri::generate_handler![status, read_all, commit, toggle_bypass])
+        .setup(|app| {
+            if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some() {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.set_decorations(false);
+                }
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

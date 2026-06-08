@@ -83,6 +83,25 @@ header .icon {
   font-weight: 500;
 }
 
+.decor-toggle {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 5px;
+  cursor: pointer;
+  color: var(--sub);
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, border-color 0.15s;
+}
+.decor-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.decor-toggle.active {
+  color: var(--accent);
+}
+
 /* banner */
 .banner-bar {
   width: 100%;

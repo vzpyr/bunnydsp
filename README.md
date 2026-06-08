@@ -55,16 +55,8 @@ Requires Rust (1.75+) and Node.js (20+).
 
 ```bash
 npm install
-cd src-tauri && cargo build --release
-# Binary at src-tauri/target/release/bunnydsp
-```
-
-Or use the Tauri CLI:
-
-```bash
-npm install
 npx tauri build
-# Bundled binary at src-tauri/target/release/bundle/
+# Binary at src-tauri/target/release/bunnydsp
 ```
 
 ### Permissions

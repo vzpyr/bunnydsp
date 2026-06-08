@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { downloadDir } from '@tauri-apps/api/path';
 
 let leftVol = 0;
@@ -772,6 +773,34 @@ function retryConnection() {
   readAll();
 }
 
+let _decorations = true;
+
+function isLinux() {
+  if (navigator.userAgentData && navigator.userAgentData.platform)
+    return navigator.userAgentData.platform === 'Linux';
+  return /Linux/.test(navigator.platform || '');
+}
+
+async function toggleDecorations() {
+  _decorations = !_decorations;
+  const btn = document.getElementById('decorToggle');
+  btn.classList.toggle('active', !_decorations);
+  btn.title = _decorations ? 'Hide window title bar' : 'Show window title bar';
+  try {
+    await getCurrentWindow().setDecorations(_decorations);
+  } catch (_) {}
+}
+
+if (isLinux()) {
+  const btn = document.getElementById('decorToggle');
+  btn.style.display = '';
+  getCurrentWindow().isDecorated().then(decorated => {
+    _decorations = decorated;
+    btn.classList.toggle('active', !decorated);
+    btn.title = decorated ? 'Hide window title bar' : 'Show window title bar';
+  }).catch(() => {});
+}
+
 // Expose handler functions globally for onclick attributes
 window.toggleBand = toggleBand;
 window.bandChanged = bandChanged;
@@ -788,3 +817,4 @@ window.exportConfig = exportConfig;
 window.importConfig = importConfig;
 window.toggleBypass = toggleBypass;
 window.retryConnection = retryConnection;
+window.toggleDecorations = toggleDecorations;

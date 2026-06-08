@@ -3,6 +3,8 @@
   "description": "Default capabilities for Bunny DSP",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:allow-set-decorations",
+    "core:window:allow-is-decorated"
   ]
 }
