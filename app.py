@@ -2,7 +2,7 @@
 """bunny dsp eq controller"""
 import os, sys, time, fcntl, errno, atexit, logging, random
 from typing import Optional
-from flask import Flask, jsonify, request, render_template
+from bottle import Bottle, request, response, static_file
 
 PORT_MIN = 18000
 PORT_MAX = 18999
@@ -33,14 +33,14 @@ CMD_CLEAR  = 0x43
 
 REG_ENABLE   = 0x24
 REG_MIC_GAIN = 0x65  # mic gain, -60 to +12 dB, *2 encoding
-REG_VOLUME   = 0x66  # L/R digital volume (byte 6 = L, byte 7 = R)
+REG_VOLUME   = 0x66  # l/r digital volume (byte 6 = L, byte 7 = R)
 FILTER_BASE  = 0x26
 
 DISABLED_SLOT = 0x02
 CUSTOM_SLOT   = 0x03
 FILTER_COUNT  = 5
 
-app = Flask(__name__)
+app = Bottle()
 fd = None
 hidraw_path = None
 perm_denied = False
@@ -233,8 +233,9 @@ def build_q_type_packet(reg: int, q: float, ftype: str) -> bytes:
     ])
 
 
-def _error_response(msg: str, status: int = 500):
-    return jsonify({'error': msg, 'connected': False}), status
+def _error_response(msg: str, status: int = 500) -> dict:
+    response.status = status
+    return {'error': msg, 'connected': False}
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -243,7 +244,12 @@ def _clamp(v: float, lo: float, hi: float) -> float:
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return static_file('index.html', root='templates')
+
+
+@app.route('/static/<filepath:path>')
+def serve_static(filepath):
+    return static_file(filepath, root='static')
 
 
 @app.route('/api/status')
@@ -251,28 +257,28 @@ def api_status():
     global fd, hidraw_path, perm_denied
     if fd is None:
         if not find_device():
-            return jsonify({'connected': False, 'chip_id': None,
-                            'permission_denied': perm_denied})
+            return {'connected': False, 'chip_id': None,
+                    'permission_denied': perm_denied}
         if perm_denied:
-            return jsonify({'connected': False, 'chip_id': None,
-                            'permission_denied': True})
+            return {'connected': False, 'chip_id': None,
+                    'permission_denied': True}
         if not init_hid():
-            return jsonify({'connected': False, 'chip_id': None,
-                            'permission_denied': perm_denied})
+            return {'connected': False, 'chip_id': None,
+                    'permission_denied': perm_denied}
     try:
         os.read(fd, 1)
-        return jsonify({'connected': True, 'chip_id': '?',
-                        'permission_denied': False})
+        return {'connected': True, 'chip_id': '?',
+                'permission_denied': False}
     except BlockingIOError:
-        return jsonify({'connected': True, 'chip_id': '?',
-                        'permission_denied': False})
+        return {'connected': True, 'chip_id': '?',
+                'permission_denied': False}
     except OSError:
         pass  # fd is stale
 
     current_path = find_device()
     if not current_path:
-        return jsonify({'connected': False, 'chip_id': None,
-                        'permission_denied': False})
+        return {'connected': False, 'chip_id': None,
+                'permission_denied': False}
     try:
         new_fd = os.open(current_path, os.O_RDWR)
         _set_nonblock(new_fd)
@@ -284,10 +290,10 @@ def api_status():
         hidraw_path = current_path
         log.info('\u2713 Reconnected at %s', current_path)
     except OSError:
-        return jsonify({'connected': False, 'chip_id': None,
-                        'permission_denied': False})
-    return jsonify({'connected': True, 'chip_id': '?',
-                    'permission_denied': False})
+        return {'connected': False, 'chip_id': None,
+                'permission_denied': False}
+    return {'connected': True, 'chip_id': '?',
+            'permission_denied': False}
 
 
 @app.route('/api/read')
@@ -331,23 +337,26 @@ def api_read():
 
         chip_id = read_chip_id()
 
-        return jsonify({
+        return {
             'connected': True,
             'filters': filters, 'left_vol': left_vol, 'right_vol': right_vol,
             'mic_gain': mic_gain,
             'slot': slot, 'enabled': slot == CUSTOM_SLOT,
             'chip_id': chip_id,
-        })
+        }
     except OSError as e:
         return _error_response(f'Device error: {e}')
     except Exception as e:
         return _error_response(str(e))
 
 
-@app.route('/api/commit', methods=['POST'])
+@app.route('/api/commit', method='POST')
 def api_commit():
     try:
-        body = request.get_json()
+        try:
+            body = request.json
+        except (ValueError, AttributeError):
+            body = None
         if not body:
             return _error_response('No data provided', 400)
         filters = body.get('filters', [])
@@ -400,23 +409,30 @@ def api_commit():
 
         ensure_connected()
 
-        return jsonify({'success': True, 'connected': True})
+        return {'success': True, 'connected': True}
     except OSError as e:
         return _error_response(f'Device error: {e}')
     except Exception as e:
         return _error_response(str(e))
 
 
-@app.route('/api/bypass', methods=['GET', 'POST'])
+@app.route('/api/bypass', method=['GET', 'POST'])
 def api_bypass():
     try:
         if request.method == 'POST':
-            body = request.get_json()
+            try:
+                body = request.json
+            except (ValueError, AttributeError):
+                body = None
             target = (body or {}).get('slot', CUSTOM_SLOT)
         else:
-            target = request.args.get('to', type=int)
-            if target is None:
+            raw = request.query.get('to')
+            if raw is None:
                 return _error_response('Provide ?to=2 or ?to=3', 400)
+            try:
+                target = int(raw)
+            except (TypeError, ValueError):
+                return _error_response('?to must be an integer (2 or 3)', 400)
 
         write_report(bytes([REG_ENABLE, 0, 0, 0, CMD_WRITE, 0,
                             target, 0, 0, 0]))
@@ -424,8 +440,8 @@ def api_bypass():
 
         ensure_connected()
 
-        return jsonify({'enabled': target == CUSTOM_SLOT, 'slot': target,
-                        'connected': True})
+        return {'enabled': target == CUSTOM_SLOT, 'slot': target,
+                'connected': True}
     except OSError as e:
         return _error_response(f'Device error: {e}')
     except Exception as e:
@@ -445,7 +461,6 @@ if __name__ == '__main__':
             log.warning('Permission denied, starting server anyway.')
         elif not init_hid():
             log.warning('%s not found, starting server anyway.', DEVICE_NAME)
-        log.info('Starting on http://localhost:%d', port)
         app.run(host='127.0.0.1', port=port, debug=False)
 
     port = _pick_port()
@@ -454,12 +469,10 @@ if __name__ == '__main__':
         import webbrowser
         webbrowser.open(f'http://localhost:{port}')
         start_flask()
-    elif frozen:
+    else:
         import threading
         import webview
         threading.Thread(target=start_flask, daemon=True).start()
         webview.create_window('Bunny DSP', f'http://127.0.0.1:{port}/?native=1',
                               width=960, height=720)
         webview.start()
-    else:
-        start_flask()

@@ -288,7 +288,7 @@ function drawEQ() {
   // composite frequency response
   const steps = 800;
 
-  // Individual band curves (faint, behind composite)
+  // individual band curves (faint, behind composite)
   for (let b = 0; b < 5; b++) {
     if (disabled[b]) continue;
     const ft = document.getElementById('type' + b)?.value || 'PK';
@@ -310,7 +310,7 @@ function drawEQ() {
     ctx.stroke();
   }
 
-  // Composite curve
+  // composite curve
   ctx.beginPath();
   let first = true;
   for (let i = 0; i <= steps; i++) {
@@ -495,7 +495,7 @@ async function readAll(quiet = false) {
   if (isWorking) return;
   isWorking = true;
   syncButtonStates();
-  if (!quiet) notify('Reading from device…');
+  if (!quiet) notify('Reading from device...');
 
   try {
     const data = await api('/api/read');
@@ -550,7 +550,7 @@ async function commit() {
   if (isWorking || !hasChanges || !connected) return;
   isWorking = true;
   syncButtonStates();
-  notify('Writing to device…');
+  notify('Writing to device...');
 
   try {
     const filters = [];
@@ -759,6 +759,6 @@ async function toggleBypass() {
 
 function retryConnection() {
   // readAll triggers reopen() if fd is stale
-  notify('Reconnecting…', 'success');
+  notify('Reconnecting...', 'success');
   readAll();
 }
