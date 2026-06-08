@@ -1,2 +1,0 @@
-bottle>=0.13
-pywebview>=4.0

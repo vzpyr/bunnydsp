@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bunny DSP</title>
-<link rel="icon" type="image/png" href="/static/favicon.png">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
 
@@ -30,28 +30,26 @@
       <p>Please connect your Tanchjim Bunny DSP IEMs.</p>
       <button class="btn accent" onclick="retryConnection()">↻ Retry</button>
     </div>
-  </div>
+</div>
 
-  <div id="permDeniedOverlay" class="disconnect-overlay">
+<div id="permDeniedOverlay" class="disconnect-overlay">
     <div class="disconnect-card" style="max-width:500px">
       <div class="disconnect-icon">🔒</div>
       <strong>Permission Denied</strong>
       <p style="text-align:left;line-height:1.6">
         Cannot access the Bunny DSP USB device.<br><br>
-        <b>Option 1 - udev rule (permanent):</b><br>
+        <b>Linux - udev rule (permanent):</b><br>
         <code style="font-size:0.7rem;background:var(--surface2);padding:2px 6px;border-radius:4px;display:block;margin:4px 0;word-break:break-all">echo 'SUBSYSTEM=="hidraw", ATTRS{idVendor}=="31b2", ATTRS{idProduct}=="1112", GROUP="audio", MODE="0660", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/99-tanchjim-bunny.rules</code>
         Then: <code style="font-size:0.7rem">sudo usermod -aG audio $USER</code> and log out/in.<br><br>
-        <b>Option 2 - sudo (one-time):</b><br>
-        <code style="font-size:0.7rem">sudo -E ./bunnydsp</code> (preserves display for native window)<br>
-        or <code style="font-size:0.7rem">sudo -E ./bunnydsp --web</code> (browser mode)
+        <b>Windows:</b> Run the app as Administrator or use Zadig to install the WinUSB driver.
       </p>
       <button class="btn accent" onclick="retryConnection()">↻ Retry</button>
     </div>
-  </div>
+</div>
 
-  <div class="banner-bar"></div>
+<div class="banner-bar"></div>
 
-  <div class="container" id="app">
+<div class="container" id="app">
   <div id="notify" class="notify"></div>
 
   <div class="toolbar">
@@ -99,10 +97,10 @@
   </svg>
 </button>
 <div class="corner-asano-wrap">
-  <img class="corner-asano" src="/static/asano.png" alt="Asano">
+  <img class="corner-asano" src="/src/asano.png" alt="Asano">
 </div>
 
-<script src="/static/app.js"></script>
+<script type="module" src="/src/app.js"></script>
 
 </body>
 </html>

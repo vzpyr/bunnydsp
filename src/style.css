@@ -87,7 +87,7 @@ header .icon {
 .banner-bar {
   width: 100%;
   height: 240px;
-  background: url('/static/banner.png') repeat-x top left / auto 240px;
+  background: url('/src/banner.png') repeat-x top left / auto 240px;
 }
 
 /* layout */

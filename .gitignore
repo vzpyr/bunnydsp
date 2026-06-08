@@ -1,6 +1,4 @@
-__pycache__/
-build/
+node_modules/
 dist/
-*.spec
-AGENTS.md
-REGISTER-MAP.md
+src-tauri/target/
+*.log

@@ -1,3 +1,6 @@
+import { invoke } from '@tauri-apps/api/core';
+import { downloadDir } from '@tauri-apps/api/path';
+
 let leftVol = 0;
 let rightVol = 0;
 let micGain = 0;
@@ -6,7 +9,7 @@ let hasChanges = false;
 let connected = false;
 let _wasConnected = false;
 let isWorking = false;
-let _reading = false;  // suppress markChanged during programmatic writes
+let _reading = false;
 let _pollTimer = null;
 let _pollFails = 0;
 let _needsReread = false;
@@ -16,7 +19,6 @@ let _drag = null;
 
 const FREQ_POINTS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 const disabled = [false, false, false, false, false];
-const isNative = window.location.search.includes('native');
 
 document.getElementById('bands').innerHTML = [0, 1, 2, 3, 4].map(createBandHTML).join('');
 drawEQ();
@@ -398,6 +400,20 @@ function filterResponse(f, fc, gain, q, type) {
   return 0;
 }
 
+// --- Tauri IPC helpers ---
+
+function notify(msg, type = 'success', persistent = false) {
+  const el = document.getElementById('notify');
+  el.textContent = msg;
+  el.className = 'notify ' + type;
+  if (el._timer) { clearTimeout(el._timer); el._timer = null; }
+  if (!persistent) {
+    el._timer = setTimeout(() => { el.className = 'notify'; }, 4000);
+  }
+}
+
+// --- Polling ---
+
 function startPolling() {
   checkStatus();
   _pollTimer = setInterval(checkStatus, 5000);
@@ -405,8 +421,7 @@ function startPolling() {
 
 async function checkStatus() {
   try {
-    const r = await fetch('/api/status');
-    const data = await r.json();
+    const data = await invoke('status');
     if (data.connected) {
       _pollFails = 0;
       document.getElementById('permDeniedOverlay').classList.remove('visible');
@@ -464,32 +479,7 @@ function gotDisconnected() {
   syncButtonStates();
 }
 
-async function api(path, opts = {}) {
-  try {
-    const r = await fetch(path, opts);
-    const data = await r.json();
-    if (data.error) {
-      notify(data.error, 'error');
-      if (data.connected === false) gotDisconnected();
-      return null;
-    }
-    return data;
-  } catch (e) {
-    notify('Request failed: ' + e.message, 'error');
-    gotDisconnected();
-    return null;
-  }
-}
-
-function notify(msg, type = 'success', persistent = false) {
-  const el = document.getElementById('notify');
-  el.textContent = msg;
-  el.className = 'notify ' + type;
-  if (el._timer) { clearTimeout(el._timer); el._timer = null; }
-  if (!persistent) {
-    el._timer = setTimeout(() => { el.className = 'notify'; }, 4000);
-  }
-}
+// --- Read / Commit / Bypass ---
 
 async function readAll(quiet = false) {
   if (isWorking) return;
@@ -498,8 +488,13 @@ async function readAll(quiet = false) {
   if (!quiet) notify('Reading from device...');
 
   try {
-    const data = await api('/api/read');
+    const data = await invoke('read_all');
     if (!data) return;
+    if (data.error) {
+      notify(data.error, 'error');
+      gotDisconnected();
+      return;
+    }
 
     _reading = true;
     if (data.filters && data.filters.length > 0) {
@@ -540,6 +535,9 @@ async function readAll(quiet = false) {
     hasChanges = false;
     drawEQ();
     if (!quiet) notify('Read ' + data.filters.length + ' filters', 'success');
+  } catch (e) {
+    notify('Read failed: ' + e, 'error');
+    gotDisconnected();
   } finally {
     isWorking = false;
     syncButtonStates();
@@ -567,16 +565,22 @@ async function commit() {
     const rightVolVal = parseFloat(document.getElementById('rightVolSlider').value);
     const micGainVal = parseFloat(document.getElementById('micGainSlider').value);
 
-    const data = await api('/api/commit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filters, left_vol: leftVolVal, right_vol: rightVolVal, mic_gain: micGainVal })
+    const data = await invoke('commit', {
+      filters,
+      leftVol: leftVolVal,
+      rightVol: rightVolVal,
+      micGain: micGainVal
     });
 
-    if (data) {
+    if (data && data.success) {
       hasChanges = false;
       notify('✓ Committed! You should hear a beep.', 'success');
+    } else if (data && data.error) {
+      notify(data.error, 'error');
     }
+  } catch (e) {
+    notify('Commit failed: ' + e, 'error');
+    gotDisconnected();
   } finally {
     isWorking = false;
     syncButtonStates();
@@ -647,96 +651,98 @@ function exportConfig() {
   a.download = `bunnydsp-${ts}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  if (isNative) {
-    notify('Exported to ~/Downloads/bunnydsp-' + ts + '.json', 'success');
-  } else {
-    notify('Config exported', 'success');
-  }
+  downloadDir().then(dir => {
+    notify('Exported to ' + dir + '/bunnydsp-' + ts + '.json', 'success');
+  }).catch(() => {
+    notify('Exported to Downloads/bunnydsp-' + ts + '.json', 'success');
+  });
 }
 
 function importConfig(event) {
   const file = event.target.files[0];
-  event.target.value = '';  // allow re-importing same file
+  event.target.value = '';
   if (!file) return;
 
   const reader = new FileReader();
   reader.onload = function(e) {
-    let cfg;
-    try {
-      cfg = JSON.parse(e.target.result);
-    } catch (_) {
-      notify('Invalid JSON file', 'error');
-      return;
-    }
-
-    if (!cfg.format || !cfg.format.startsWith('bunnydsp-')) {
-      notify('Not a Bunny DSP config file (missing "format")', 'error');
-      return;
-    }
-    if (!Array.isArray(cfg.bands)) {
-      notify('Invalid config: missing "bands" array', 'error');
-      return;
-    }
-
-    const validTypes = ['PK', 'LSQ', 'HSQ'];
-
-    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-
-    const lv = clamp(parseFloat(cfg.leftVol) || 0, -60, 0);
-    const rv = clamp(parseFloat(cfg.rightVol) || 0, -60, 0);
-    document.getElementById('leftVolSlider').value = lv;
-    document.getElementById('leftVolInput').value = lv;
-    leftVol = lv;
-    document.getElementById('rightVolSlider').value = rv;
-    document.getElementById('rightVolInput').value = rv;
-    rightVol = rv;
-
-    const mg = clamp(parseFloat(cfg.micGain) || 0, -60, 12);
-    document.getElementById('micGainSlider').value = mg;
-    document.getElementById('micGainInput').value = mg;
-    micGain = mg;
-
-    _reading = true;
-    for (let i = 0; i < Math.min(cfg.bands.length, 5); i++) {
-      const b = cfg.bands[i] || {};
-      const type = validTypes.includes(b.type) ? b.type : 'PK';
-      const freq = clamp(parseFloat(b.freq) || 1000, 20, 20000);
-      const gain = clamp(parseFloat(b.gain) || 0, -12, 12);
-      const q = clamp(parseFloat(b.q) || 1.0, 0.1, 10);
-
-      document.getElementById('type' + i).value = type;
-      document.getElementById('freq' + i).value = freq;
-      document.getElementById('gain' + i).value = gain;
-      document.getElementById('q' + i).value = q;
-      bandChanged(i);
-
-      disabled[i] = !!b.disabled;
-      const toggle = document.getElementById('toggle' + i);
-      toggle.textContent = disabled[i] ? 'Disabled' : 'Enabled';
-      toggle.className = 'band-toggle' + (disabled[i] ? ' disabled' : '');
-    }
-
-    // fill missing bands with defaults
-    for (let i = cfg.bands.length; i < 5; i++) {
-      const defaults = [100, 500, 1000, 5000, 10000];
-      document.getElementById('type' + i).value = 'PK';
-      document.getElementById('freq' + i).value = defaults[i];
-      document.getElementById('gain' + i).value = 0;
-      document.getElementById('q' + i).value = 1.0;
-      bandChanged(i);
-      disabled[i] = false;
-      const toggle = document.getElementById('toggle' + i);
-      toggle.textContent = 'Enabled';
-      toggle.className = 'band-toggle';
-    }
-
-    _reading = false;
-    enforceFreqOrder();
-    markChanged();
-    drawEQ();
-    notify(`Imported ${cfg.bands.length} band(s). Review and press Commit.`, 'success');
+    processImportJSON(e.target.result);
   };
   reader.readAsText(file);
+}
+
+function processImportJSON(json) {
+  let cfg;
+  try {
+    cfg = JSON.parse(json);
+  } catch (_) {
+    notify('Invalid JSON file', 'error');
+    return;
+  }
+
+  if (!cfg.format || !cfg.format.startsWith('bunnydsp-')) {
+    notify('Not a Bunny DSP config file (missing "format")', 'error');
+    return;
+  }
+  if (!Array.isArray(cfg.bands)) {
+    notify('Invalid config: missing "bands" array', 'error');
+    return;
+  }
+
+  const validTypes = ['PK', 'LSQ', 'HSQ'];
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  const lv = clamp(parseFloat(cfg.leftVol) || 0, -60, 0);
+  const rv = clamp(parseFloat(cfg.rightVol) || 0, -60, 0);
+  document.getElementById('leftVolSlider').value = lv;
+  document.getElementById('leftVolInput').value = lv;
+  leftVol = lv;
+  document.getElementById('rightVolSlider').value = rv;
+  document.getElementById('rightVolInput').value = rv;
+  rightVol = rv;
+
+  const mg = clamp(parseFloat(cfg.micGain) || 0, -60, 12);
+  document.getElementById('micGainSlider').value = mg;
+  document.getElementById('micGainInput').value = mg;
+  micGain = mg;
+
+  _reading = true;
+  for (let i = 0; i < Math.min(cfg.bands.length, 5); i++) {
+    const b = cfg.bands[i] || {};
+    const type = validTypes.includes(b.type) ? b.type : 'PK';
+    const freq = clamp(parseFloat(b.freq) || 1000, 20, 20000);
+    const gain = clamp(parseFloat(b.gain) || 0, -12, 12);
+    const q = clamp(parseFloat(b.q) || 1.0, 0.1, 10);
+
+    document.getElementById('type' + i).value = type;
+    document.getElementById('freq' + i).value = freq;
+    document.getElementById('gain' + i).value = gain;
+    document.getElementById('q' + i).value = q;
+    bandChanged(i);
+
+    disabled[i] = !!b.disabled;
+    const toggle = document.getElementById('toggle' + i);
+    toggle.textContent = disabled[i] ? 'Disabled' : 'Enabled';
+    toggle.className = 'band-toggle' + (disabled[i] ? ' disabled' : '');
+  }
+
+  for (let i = cfg.bands.length; i < 5; i++) {
+    const defaults = [100, 500, 1000, 5000, 10000];
+    document.getElementById('type' + i).value = 'PK';
+    document.getElementById('freq' + i).value = defaults[i];
+    document.getElementById('gain' + i).value = 0;
+    document.getElementById('q' + i).value = 1.0;
+    bandChanged(i);
+    disabled[i] = false;
+    const toggle = document.getElementById('toggle' + i);
+    toggle.textContent = 'Enabled';
+    toggle.className = 'band-toggle';
+  }
+
+  _reading = false;
+  enforceFreqOrder();
+  markChanged();
+  drawEQ();
+  notify(`Imported ${cfg.bands.length} band(s). Review and press Commit.`, 'success');
 }
 
 function updateBypassUI() {
@@ -747,18 +753,38 @@ function updateBypassUI() {
 async function toggleBypass() {
   if (isWorking || !connected) return;
   const targetSlot = eqEnabled ? 2 : 3;
-  const data = await api('/api/bypass?to=' + targetSlot);
-  if (!data) return;
-  eqEnabled = data.enabled;
-  updateBypassUI();
-  document.getElementById('slotInfo').textContent = eqEnabled ? 'EQ: Active' : 'EQ: Off';
-  drawEQ();
-  notify(eqEnabled ? 'EQ enabled' : 'EQ disabled', 'success');
-  if (eqEnabled) _needsReread = true;
+  try {
+    const data = await invoke('toggle_bypass', { targetSlot });
+    if (!data) return;
+    eqEnabled = data.enabled;
+    updateBypassUI();
+    document.getElementById('slotInfo').textContent = eqEnabled ? 'EQ: Active' : 'EQ: Off';
+    drawEQ();
+    notify(eqEnabled ? 'EQ enabled' : 'EQ disabled', 'success');
+    if (eqEnabled) _needsReread = true;
+  } catch (e) {
+    notify('Bypass toggle failed: ' + e, 'error');
+  }
 }
 
 function retryConnection() {
-  // readAll triggers reopen() if fd is stale
   notify('Reconnecting...', 'success');
   readAll();
 }
+
+// Expose handler functions globally for onclick attributes
+window.toggleBand = toggleBand;
+window.bandChanged = bandChanged;
+window.bandNumChanged = bandNumChanged;
+window.bandNumKey = bandNumKey;
+window.updateLeftVol = updateLeftVol;
+window.updateRightVol = updateRightVol;
+window.updateMicGain = updateMicGain;
+window.readAll = readAll;
+window.commit = commit;
+window.clearAll = clearAll;
+window.toggleAsano = toggleAsano;
+window.exportConfig = exportConfig;
+window.importConfig = importConfig;
+window.toggleBypass = toggleBypass;
+window.retryConnection = retryConnection;

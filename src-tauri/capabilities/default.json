@@ -1,0 +1,8 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for Bunny DSP",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}
