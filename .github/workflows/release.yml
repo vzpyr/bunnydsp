@@ -41,8 +41,7 @@ jobs:
             libudev-dev
 
       - run: npm ci
-      - run: npm run build
-      - run: cd src-tauri && cargo build --release
+      - run: npx tauri build
 
       - uses: actions/upload-artifact@v4
         with:
