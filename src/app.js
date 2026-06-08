@@ -249,6 +249,17 @@ function drawEQ() {
   ctx.clearRect(0, 0, W, H);
   _dots = [];
 
+  const cs = getComputedStyle(document.documentElement);
+  const cGrid = cs.getPropertyValue('--canvas-grid').trim();
+  const cLabel = cs.getPropertyValue('--canvas-label').trim();
+  const cZero = cs.getPropertyValue('--canvas-zero').trim();
+  const cBand = cs.getPropertyValue('--canvas-band').trim();
+  const cCurve = cs.getPropertyValue('--canvas-curve').trim();
+  const cDot = cs.getPropertyValue('--canvas-dot').trim();
+  const cDotText = cs.getPropertyValue('--canvas-dot-text').trim();
+  const cEqOffBg = cs.getPropertyValue('--canvas-eq-off-bg').trim();
+  const cEqOffText = cs.getPropertyValue('--canvas-eq-off-text').trim();
+
   const fMin = 20, fMax = 20000;
   const dbMin = -15, dbMax = 15;
 
@@ -256,7 +267,7 @@ function drawEQ() {
   function dbToY(db) { return H - ((db - dbMin) / (dbMax - dbMin)) * H; }
 
   // grid
-  ctx.strokeStyle = '#ddd9d4';
+  ctx.strokeStyle = cGrid;
   ctx.lineWidth = 1;
   for (let db = -12; db <= 12; db += 3) {
     const y = dbToY(db);
@@ -264,7 +275,7 @@ function drawEQ() {
     ctx.moveTo(0, y);
     ctx.lineTo(W, y);
     ctx.stroke();
-    ctx.fillStyle = '#9a9590';
+    ctx.fillStyle = cLabel;
     ctx.font = '10px League Spartan';
     ctx.fillText(db + ' dB', 4, y - 3);
   }
@@ -274,14 +285,14 @@ function drawEQ() {
     ctx.moveTo(x, 0);
     ctx.lineTo(x, H);
     ctx.stroke();
-    ctx.fillStyle = '#9a9590';
+    ctx.fillStyle = cLabel;
     ctx.font = '10px League Spartan';
     ctx.textAlign = 'center';
     ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f, x, H - 2);
     ctx.textAlign = 'start';
   }
   // 0 dB line
-  ctx.strokeStyle = '#d4cfca';
+  ctx.strokeStyle = cZero;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(0, dbToY(0));
@@ -308,7 +319,7 @@ function drawEQ() {
       const x = freqToX(f), y = dbToY(db);
       if (bfirst) { ctx.moveTo(x, y); bfirst = false; } else ctx.lineTo(x, y);
     }
-    ctx.strokeStyle = 'rgba(42, 75, 127, 0.18)';
+    ctx.strokeStyle = cBand;
     ctx.lineWidth = 1;
     ctx.stroke();
   }
@@ -332,15 +343,15 @@ function drawEQ() {
     const x = freqToX(f), y = dbToY(totalDb);
     if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = '#D4A373';
+  ctx.strokeStyle = cCurve;
   ctx.lineWidth = 2.5;
   ctx.stroke();
 
   // eq off indicator
   if (!eqEnabled) {
-    ctx.fillStyle = 'rgba(217, 117, 107, 0.07)';
+    ctx.fillStyle = cEqOffBg;
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#d9756b';
+    ctx.fillStyle = cEqOffText;
     ctx.font = 'bold 14px League Spartan';
     ctx.textAlign = 'center';
     ctx.fillText('EQ DISABLED - Flat Response', W / 2, 30);
@@ -358,9 +369,9 @@ function drawEQ() {
     _dots.push({ x, y, band: b });
     ctx.beginPath();
     ctx.arc(x, y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = '#d3dee8';
+    ctx.fillStyle = cDot;
     ctx.fill();
-    ctx.fillStyle = '#2c2926';
+    ctx.fillStyle = cDotText;
     ctx.font = 'bold 10px League Spartan';
     ctx.textAlign = 'center';
     ctx.fillText((b + 1), x, y - 10);
@@ -773,6 +784,22 @@ function retryConnection() {
   readAll();
 }
 
+let _darkMode = document.documentElement.getAttribute('data-theme') === 'dark';
+
+function syncThemeIcons() {
+  document.getElementById('themeIconSun').style.display = _darkMode ? '' : 'none';
+  document.getElementById('themeIconMoon').style.display = _darkMode ? 'none' : '';
+}
+
+function toggleTheme() {
+  _darkMode = !_darkMode;
+  document.documentElement.setAttribute('data-theme', _darkMode ? 'dark' : 'light');
+  syncThemeIcons();
+  drawEQ();
+}
+
+syncThemeIcons();
+
 let _decorations = true;
 
 function isLinux() {
@@ -818,3 +845,4 @@ window.importConfig = importConfig;
 window.toggleBypass = toggleBypass;
 window.retryConnection = retryConnection;
 window.toggleDecorations = toggleDecorations;
+window.toggleTheme = toggleTheme;
