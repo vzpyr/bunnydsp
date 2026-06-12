@@ -1,7 +1,14 @@
+#[cfg(not(target_os = "android"))]
 use hidapi::{HidApi, HidDevice};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(target_os = "android")]
+use jni::{JavaVM, objects::GlobalRef};
+#[cfg(target_os = "android")]
+use std::sync::OnceLock;
 
 pub const VID: u16 = 0x31b2;
 pub const PID: u16 = 0x1112;
@@ -20,6 +27,13 @@ const FILTER_BASE: u8 = 0x26;
 pub const DISABLED_SLOT: u8 = 0x02;
 pub const CUSTOM_SLOT: u8 = 0x03;
 pub const FILTER_COUNT: usize = 5;
+
+// Android JNI globals and connection status
+pub static ANDROID_CONNECTED: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "android")]
+pub static JVM: OnceLock<JavaVM> = OnceLock::new();
+#[cfg(target_os = "android")]
+pub static MAIN_ACTIVITY_CLASS: OnceLock<GlobalRef> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FilterData {
@@ -78,109 +92,241 @@ pub struct BypassResult {
 }
 
 pub struct HidState {
+    #[cfg(not(target_os = "android"))]
     pub api: HidApi,
+    #[cfg(not(target_os = "android"))]
     pub device: Option<HidDevice>,
 }
 
 impl HidState {
     pub fn new() -> Result<Self, String> {
-        let api = HidApi::new().map_err(|e| format!("Failed to init HID: {e}"))?;
-        Ok(Self { api, device: None })
+        #[cfg(not(target_os = "android"))]
+        {
+            let api = HidApi::new().map_err(|e| format!("Failed to init HID: {e}"))?;
+            Ok(Self { api, device: None })
+        }
+        #[cfg(target_os = "android")]
+        {
+            Ok(Self {})
+        }
     }
 
     pub fn find_and_open(&mut self) -> Result<bool, String> {
-        if self.device.is_some() {
-            return Ok(true);
-        }
-        match self.api.open(VID, PID) {
-            Ok(dev) => {
-                self.device = Some(dev);
-                Ok(true)
+        #[cfg(not(target_os = "android"))]
+        {
+            if self.device.is_some() {
+                return Ok(true);
             }
-            Err(_) => {
-                // Check if the device is physically present but access was denied.
-                // On all platforms, hidapi enumerates devices regardless of permissions.
-                let present = self
-                    .api
-                    .device_list()
-                    .any(|d| d.vendor_id() == VID && d.product_id() == PID);
-                if present {
-                    Err("permission_denied".into())
-                } else {
-                    Ok(false)
+            match self.api.open(VID, PID) {
+                Ok(dev) => {
+                    self.device = Some(dev);
+                    Ok(true)
+                }
+                Err(_) => {
+                    let present = self
+                        .api
+                        .device_list()
+                        .any(|d| d.vendor_id() == VID && d.product_id() == PID);
+                    if present {
+                        Err("permission_denied".into())
+                    } else {
+                        Ok(false)
+                    }
                 }
             }
+        }
+        #[cfg(target_os = "android")]
+        {
+            if ANDROID_CONNECTED.load(Ordering::SeqCst) {
+                return Ok(true);
+            }
+            
+            if let Some(jvm) = JVM.get() {
+                if let Some(class_ref) = MAIN_ACTIVITY_CLASS.get() {
+                    if let Ok(mut env) = jvm.attach_current_thread() {
+                        let class = unsafe { jni::objects::JClass::from_raw(class_ref.as_obj().as_raw()) };
+                        let _ = env.call_static_method(
+                            &class,
+                            "forceConnect",
+                            "()Z",
+                            &[],
+                        );
+                    }
+                }
+            }
+            
+            std::thread::sleep(Duration::from_millis(200));
+            Ok(ANDROID_CONNECTED.load(Ordering::SeqCst))
         }
     }
 
     pub fn ensure_connected(&mut self) -> bool {
-        if self.device.is_none() {
-            return false;
-        }
-        let mut buf = [0u8; 16];
-        match self.device.as_ref().unwrap().read_timeout(&mut buf, 10) {
-            Ok(_) => true,
-            Err(e) => {
-                let s = e.to_string();
-                if s.contains("timeout") {
-                    true
-                } else {
-                    false
+        #[cfg(not(target_os = "android"))]
+        {
+            if self.device.is_none() {
+                return false;
+            }
+            let mut buf = [0u8; 16];
+            match self.device.as_ref().unwrap().read_timeout(&mut buf, 10) {
+                Ok(_) => true,
+                Err(e) => {
+                    let s = e.to_string();
+                    if s.contains("timeout") {
+                        true
+                    } else {
+                        false
+                    }
                 }
             }
+        }
+        #[cfg(target_os = "android")]
+        {
+            ANDROID_CONNECTED.load(Ordering::SeqCst)
         }
     }
 
     pub fn reopen(&mut self) -> bool {
-        self.device = None;
-        std::thread::sleep(Duration::from_millis(200));
-        match self.api.open(VID, PID) {
-            Ok(dev) => {
-                log::info!("Reconnected to Bunny DSP");
-                self.device = Some(dev);
-                true
+        #[cfg(not(target_os = "android"))]
+        {
+            self.device = None;
+            std::thread::sleep(Duration::from_millis(200));
+            match self.api.open(VID, PID) {
+                Ok(dev) => {
+                    log::info!("Reconnected to Bunny DSP");
+                    self.device = Some(dev);
+                    true
+                }
+                Err(_) => false,
             }
-            Err(_) => false,
+        }
+        #[cfg(target_os = "android")]
+        {
+            ANDROID_CONNECTED.load(Ordering::SeqCst)
         }
     }
 
     pub fn reconnect_after_commit(&mut self) -> bool {
-        self.device = None;
-        for _ in 0..10 {
-            if self.reopen() {
-                std::thread::sleep(Duration::from_millis(500));
-                return true;
+        #[cfg(not(target_os = "android"))]
+        {
+            self.device = None;
+            for _ in 0..10 {
+                if self.reopen() {
+                    std::thread::sleep(Duration::from_millis(500));
+                    return true;
+                }
+                std::thread::sleep(Duration::from_millis(200));
             }
-            std::thread::sleep(Duration::from_millis(200));
+            false
         }
-        false
+        #[cfg(target_os = "android")]
+        {
+            std::thread::sleep(Duration::from_millis(1000));
+            ANDROID_CONNECTED.load(Ordering::SeqCst)
+        }
     }
 
+    #[cfg(not(target_os = "android"))]
     fn device_ref(&self) -> Result<&HidDevice, String> {
         self.device
             .as_ref()
             .ok_or_else(|| "Device not connected".to_string())
     }
 
-    fn write_report(&self, data: &[u8; 10]) -> Result<(), String> {
-        let dev = self.device_ref()?;
-        let mut packet = vec![REPORT_ID];
-        packet.extend_from_slice(data);
-        for attempt in 0..3 {
-            match dev.write(&packet) {
-                Ok(_) => {
-                    std::thread::sleep(Duration::from_millis(30));
-                    return Ok(());
-                }
-                Err(e) => {
-                    if attempt == 2 {
-                        return Err(format!("Write failed after 3 attempts: {e}"));
+    fn write_raw(&self, packet: &[u8]) -> Result<(), String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            let dev = self.device_ref()?;
+            for attempt in 0..3 {
+                match dev.write(packet) {
+                    Ok(_) => {
+                        std::thread::sleep(Duration::from_millis(30));
+                        return Ok(());
                     }
-                    std::thread::sleep(Duration::from_millis(50));
+                    Err(e) => {
+                        if attempt == 2 {
+                            return Err(format!("Write failed after 3 attempts: {e}"));
+                        }
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
                 }
             }
+            unreachable!()
         }
-        unreachable!()
+
+        #[cfg(target_os = "android")]
+        {
+            let jvm = JVM.get().ok_or("JavaVM not initialized")?;
+            let class_ref = MAIN_ACTIVITY_CLASS.get().ok_or("MainActivity class not cached")?;
+            
+            let mut env = jvm.attach_current_thread().map_err(|e| e.to_string())?;
+            let byte_array = env.byte_array_from_slice(packet).map_err(|e| e.to_string())?;
+            
+            let class = unsafe { jni::objects::JClass::from_raw(class_ref.as_obj().as_raw()) };
+
+            let res = env.call_static_method(
+                &class,
+                "writeReport",
+                "([B)Z",
+                &[jni::objects::JValue::Object(&byte_array)],
+            ).map_err(|e| e.to_string())?;
+            
+            let success = res.z().map_err(|e| e.to_string())?;
+            if success {
+                std::thread::sleep(Duration::from_millis(30));
+                Ok(())
+            } else {
+                Err("Android USB write failed".into())
+            }
+        }
+    }
+
+    fn write_report(&self, data: &[u8; 10]) -> Result<(), String> {
+        let mut packet = vec![REPORT_ID];
+        packet.extend_from_slice(data);
+        self.write_raw(&packet)
+    }
+
+    fn read_raw(&self, timeout_ms: i32) -> Result<Option<Vec<u8>>, String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            let dev = self.device_ref()?;
+            let mut buf = [0u8; 16];
+            match dev.read_timeout(&mut buf, timeout_ms) {
+                Ok(n) if n > 0 => Ok(Some(buf[..n].to_vec())),
+                Err(e) if !e.to_string().contains("timeout") => Err(format!("Read error: {e}")),
+                _ => Ok(None),
+            }
+        }
+
+        #[cfg(target_os = "android")]
+        {
+            let jvm = JVM.get().ok_or("JavaVM not initialized")?;
+            let class_ref = MAIN_ACTIVITY_CLASS.get().ok_or("MainActivity class not cached")?;
+            
+            let mut env = jvm.attach_current_thread().map_err(|e| e.to_string())?;
+            
+            let class = unsafe { jni::objects::JClass::from_raw(class_ref.as_obj().as_raw()) };
+
+            let res = env.call_static_method(
+                &class,
+                "readReport",
+                "(I)[B",
+                &[jni::objects::JValue::Int(timeout_ms)],
+            ).map_err(|e| e.to_string())?;
+            
+            let obj = res.l().map_err(|e| e.to_string())?;
+            if !obj.is_null() {
+                let byte_array = unsafe { jni::objects::JByteArray::from_raw(obj.into_raw()) };
+                let len = env.get_array_length(&byte_array).map_err(|e| e.to_string())?;
+                if len > 0 {
+                    let mut buf = vec![0i8; len as usize];
+                    env.get_byte_array_region(&byte_array, 0, &mut buf).map_err(|e| e.to_string())?;
+                    let buf_u8: Vec<u8> = buf.iter().map(|&x| x as u8).collect();
+                    return Ok(Some(buf_u8));
+                }
+            }
+            Ok(None)
+        }
     }
 
     fn read_response(
@@ -189,12 +335,10 @@ impl HidState {
         cmd: u8,
         timeout_ms: i32,
     ) -> Result<Option<[u8; 10]>, String> {
-        let dev = self.device_ref()?;
         let deadline = Instant::now() + Duration::from_millis(timeout_ms as u64);
         while Instant::now() < deadline {
-            let mut buf = [0u8; 16];
-            match dev.read_timeout(&mut buf, 10) {
-                Ok(n) if n >= 5 => {
+            match self.read_raw(10) {
+                Ok(Some(buf)) if buf.len() >= 5 => {
                     let data = &buf[1..]; // skip report ID
                     if data.len() >= 5 && data[0] == reg && data[4] == cmd {
                         let mut out = [0u8; 10];
@@ -203,9 +347,7 @@ impl HidState {
                         return Ok(Some(out));
                     }
                 }
-                Err(e) if !e.to_string().contains("timeout") => {
-                    return Err(format!("Read error: {e}"));
-                }
+                Err(e) => return Err(e),
                 _ => {}
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -316,22 +458,16 @@ impl HidState {
     }
 
     pub fn read_chip_id(&self) -> String {
-        if let Ok(dev) = self.device_ref() {
-            // Register 0x54 is read via its own report ID (0x54), not report 0x4B.
-            // Send 11 bytes: report ID 0x54 + 10-byte payload.
-            let probe = [0x54u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-            if dev.write(&probe).is_ok() {
-                std::thread::sleep(Duration::from_millis(50));
-                let mut buf = [0u8; 16];
-                if let Ok(n) = dev.read_timeout(&mut buf, 100) {
-                    if n > 1 {
-                        // hidapi includes report ID as first byte; skip it.
-                        let end = buf[1..]
-                            .iter()
-                            .position(|&b| b == 0)
-                            .unwrap_or(n.saturating_sub(1));
-                        return String::from_utf8_lossy(&buf[1..1 + end]).into_owned();
-                    }
+        let probe = [0x54u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        if self.write_raw(&probe).is_ok() {
+            std::thread::sleep(Duration::from_millis(50));
+            if let Ok(Some(buf)) = self.read_raw(100) {
+                if buf.len() > 1 {
+                    let end = buf[1..]
+                        .iter()
+                        .position(|&b| b == 0)
+                        .unwrap_or(buf.len() - 1);
+                    return String::from_utf8_lossy(&buf[1..1 + end]).into_owned();
                 }
             }
         }
@@ -453,7 +589,6 @@ impl HidState {
         right_vol: f64,
         mic_gain: f64,
     ) -> CommitResult {
-        // Enable custom slot
         let enable_pkt = [REG_ENABLE, 0, 0, 0, CMD_WRITE, 0, CUSTOM_SLOT, 0, 0, 0];
         if let Err(e) = self.write_report(&enable_pkt) {
             return CommitResult {
@@ -484,12 +619,10 @@ impl HidState {
                 "PK"
             };
 
-            // Write gain+freq and q+type for each band (fire-and-forget)
             let _ = self.write_report(&Self::build_gain_freq_packet(gf_reg, freq, gain));
             let _ = self.write_report(&Self::build_q_type_packet(q_reg, q, ftype));
         }
 
-        // Digital volume
         let vol_pkt = [
             REG_VOLUME,
             0,
@@ -504,7 +637,6 @@ impl HidState {
         ];
         let _ = self.write_report(&vol_pkt);
 
-        // Mic gain
         let mic_pkt = [
             REG_MIC_GAIN,
             0,
@@ -519,11 +651,9 @@ impl HidState {
         ];
         let _ = self.write_report(&mic_pkt);
 
-        // Commit to flash
         let commit_pkt = [0, 0, 0, 0, CMD_COMMIT, 0, 0, 0, 0, 0];
         let _ = self.write_report(&commit_pkt);
 
-        // Reconnect after USB reset
         let connected = self.reconnect_after_commit();
 
         CommitResult {

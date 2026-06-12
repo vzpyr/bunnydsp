@@ -88,6 +88,7 @@ header {
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   padding: 16px 28px;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
   display: flex;
   align-items: center;
   gap: 14px;
@@ -253,6 +254,10 @@ header .icon {
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 8px 18px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -264,6 +269,12 @@ header .icon {
   font-weight: 500;
   letter-spacing: 0.4px;
   transition: var(--transition);
+}
+
+.btn svg {
+  flex-shrink: 0;
+  position: relative;
+  top: -1px;
 }
 
 .btn:hover {
@@ -571,7 +582,7 @@ canvas {
 
 .corner-asano {
   display: block;
-  max-width: 300px;
+  max-width: 150px;
   height: auto;
   pointer-events: none;
   transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
@@ -588,7 +599,11 @@ canvas {
 /* responsive */
 @media (max-width: 700px) {
   .container { padding: 20px 16px 32px; }
-  header { padding: 14px 16px; gap: 10px; }
+  header {
+    padding: 14px 16px;
+    padding-top: calc(14px + env(safe-area-inset-top, 0px));
+    gap: 10px;
+  }
   header h1 { font-size: 0.9rem; }
   .band { grid-template-columns: 1fr 1fr; gap: 10px; }
   .band-number { grid-column: span 2; }

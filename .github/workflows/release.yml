@@ -48,8 +48,50 @@ jobs:
           name: ${{ matrix.binary }}
           path: src-tauri/target/release/${{ matrix.binary }}
 
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Install NDK
+        run: |
+          yes | sdkmanager "ndk;26.1.10909125"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Android APK
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+        run: |
+          npx tauri android build --debug
+
+      - name: Rename APK for release
+        run: mv src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk src-tauri/gen/android/app/build/outputs/apk/universal/debug/bunnydsp.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bunnydsp-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/universal/debug/bunnydsp.apk
+
   release:
-    needs: build
+    needs: [build, build-android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -61,3 +103,4 @@ jobs:
           files: |
             bunnydsp/bunnydsp
             bunnydsp.exe/bunnydsp.exe
+            bunnydsp-apk/bunnydsp.apk

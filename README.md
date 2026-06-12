@@ -41,26 +41,34 @@ All execution options require permission to access the USB HID device (see the
 [Permissions](#permissions) section below). If the device is not connected or
 permissions are missing, the UI will display an error.
 
-### Option 1: Download a pre-built binary (Recommended)
+### Option 1: Download pre-built binaries (Recommended)
 
 Download the latest release from the **Releases** tab and run it:
-
-```bash
-./bunnydsp
-```
+* **Desktop (Linux/Windows):** Download and run the standalone executable.
+* **Android:** Download the `.apk` file and install it on your device.
 
 ### Option 2: Build from source
 
 Requires Rust (1.75+) and Node.js (20+).
 
+#### Desktop Build:
 ```bash
 npm install
 npx tauri build
 # Binary at src-tauri/target/release/bunnydsp
 ```
 
+#### Android Build:
+Ensure you have the Android SDK & NDK configured (NDK `26.1.10909125` is recommended):
+```bash
+npm install
+npx tauri android build --debug
+# APK at src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+```
+
 ### Permissions
 
+#### Linux:
 The `hidraw` device requires elevated privileges to access. Create a udev rule:
 
 ```text
@@ -76,6 +84,10 @@ sudo usermod -aG audio $USER
 ```
 
 Log out and back in (or reboot) for the group change to take effect.
+
+#### Android:
+When plugging in the Tanchjim Bunny DSP, Android will prompt you: *"Open Bunny DSP to handle TANCHJIM BUNNY DSP?"*. Allow this prompt to grant the app session access to the device.
+* *Note:* Because committing settings triggers a hardware-level soft reboot of the DSP, Android treats this as a disconnect/reconnect and may ask for permission again. Depending on your custom ROM or launcher security settings, you can check the "Always open" or "Use by default" option to bypass future prompts.
 
 ---
 
@@ -109,6 +121,8 @@ bunnydsp/
 │   ├── banner.png         # Header banner image
 │   └── favicon.png
 ├── src-tauri/
+│   ├── gen/
+│   │   └── android/       # Native Android project files
 │   └── src/
 │       ├── hid.rs         # HID protocol implementation (raw USB I/O)
 │       ├── lib.rs         # Tauri commands, state management
@@ -193,7 +207,7 @@ The application automatically scans for new nodes and reconnects.
 
 The HID protocol used in this project was reverse-engineered from:
 
-* [jeromeof/devicePEQ](https://github.com/jeromeof/devicePEQ) (specifically
-  `ktmicroUsbHidHandler.js` and the Bunny DSP configuration)
-* Live USB packet captures performed on firmware v1.01 hardware
-* USB descriptor dumps gathered from the device's HID interface 3
+* **Decompiling the official Tanchjim Android app** (which provided the complete register map and command structure details, mapped out in [REGISTER-MAP.md](file:///home/daniel/Code/bunnydsp/REGISTER-MAP.md)).
+* [jeromeof/devicePEQ](https://github.com/jeromeof/devicePEQ) (specifically `ktmicroUsbHidHandler.js` and the Bunny DSP configuration).
+* Live USB packet captures performed on firmware v1.01 hardware.
+* USB descriptor dumps gathered from the device's HID interface 3.

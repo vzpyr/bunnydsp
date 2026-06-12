@@ -1,6 +1,7 @@
 mod hid;
 
 use hid::{CommitFilter, HidState, HidStateMutex, CUSTOM_SLOT};
+#[cfg(not(target_os = "android"))]
 use tauri::Manager;
 
 #[tauri::command]
@@ -12,10 +13,7 @@ async fn status(state: tauri::State<'_, HidStateMutex>) -> Result<hid::StatusRes
 #[tauri::command]
 async fn read_all(state: tauri::State<'_, HidStateMutex>) -> Result<hid::ReadResult, String> {
     let mut s = state.lock().map_err(|e| format!("Lock error: {e}"))?;
-    if s.device.is_none() {
-        let _ = s.find_and_open();
-    }
-    if s.device.is_some() && !s.ensure_connected() {
+    if s.find_and_open().is_ok() && !s.ensure_connected() {
         s.reopen();
     }
     Ok(s.cmd_read())
@@ -30,10 +28,10 @@ async fn commit(
     mic_gain: f64,
 ) -> Result<hid::CommitResult, String> {
     let mut s = state.lock().map_err(|e| format!("Lock error: {e}"))?;
-    if s.device.is_none() {
-        let _ = s.find_and_open();
+    if s.find_and_open().is_ok() && !s.ensure_connected() {
+        s.reopen();
     }
-    if s.device.is_none() {
+    if !s.ensure_connected() {
         return Ok(hid::CommitResult {
             success: false,
             connected: false,
@@ -49,10 +47,10 @@ async fn toggle_bypass(
     target_slot: u8,
 ) -> Result<hid::BypassResult, String> {
     let mut s = state.lock().map_err(|e| format!("Lock error: {e}"))?;
-    if s.device.is_none() {
-        let _ = s.find_and_open();
+    if s.find_and_open().is_ok() && !s.ensure_connected() {
+        s.reopen();
     }
-    if s.device.is_none() {
+    if !s.ensure_connected() {
         return Ok(hid::BypassResult {
             enabled: target_slot == CUSTOM_SLOT,
             slot: target_slot,
@@ -64,7 +62,13 @@ async fn toggle_bypass(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(not(target_os = "android"))]
     env_logger::init();
+
+    #[cfg(target_os = "android")]
+    android_logger::init_once(
+        android_logger::Config::default().with_max_level(log::LevelFilter::Trace)
+    );
 
     let hid_state = HidState::new().expect("Failed to initialize HID API");
     let hid_mutex: HidStateMutex = std::sync::Mutex::new(hid_state);
@@ -72,9 +76,10 @@ pub fn run() {
     tauri::Builder::default()
         .manage(hid_mutex)
         .invoke_handler(tauri::generate_handler![status, read_all, commit, toggle_bypass])
-        .setup(|app| {
+        .setup(|_app| {
+            #[cfg(not(target_os = "android"))]
             if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some() {
-                if let Some(w) = app.get_webview_window("main") {
+                if let Some(w) = _app.get_webview_window("main") {
                     let _ = w.set_decorations(false);
                 }
             }
@@ -82,4 +87,34 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_bunnydsp_eq_MainActivity_registerActivity(
+    mut env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    _activity: jni::objects::JObject,
+) {
+    if let Ok(jvm) = env.get_java_vm() {
+        let _ = hid::JVM.set(jvm);
+    }
+    if let Ok(class) = env.find_class("com/bunnydsp/eq/MainActivity") {
+        if let Ok(global_ref) = env.new_global_ref(class) {
+            let _ = hid::MAIN_ACTIVITY_CLASS.set(global_ref);
+            log::info!("MainActivity class cached successfully");
+        }
+    }
+    log::info!("MainActivity registered JVM with Rust JNI");
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_bunnydsp_eq_MainActivity_setConnectedStatus(
+    _env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    connected: jni::sys::jboolean,
+) {
+    hid::ANDROID_CONNECTED.store(connected != 0, std::sync::atomic::Ordering::SeqCst);
+    log::info!("USB Connection status updated: {}", connected != 0);
 }
