@@ -10,7 +10,9 @@ use jni::{JavaVM, objects::GlobalRef};
 #[cfg(target_os = "android")]
 use std::sync::OnceLock;
 
+#[allow(dead_code)]
 pub const VID: u16 = 0x31b2;
+#[allow(dead_code)]
 pub const PID: u16 = 0x1112;
 
 const REPORT_ID: u8 = 0x4B;
