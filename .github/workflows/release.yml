@@ -79,15 +79,15 @@ jobs:
       - name: Build Android APK
         run: |
           export NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125
-          npx tauri android build --debug
+          npx tauri android build
 
       - name: Rename APK for release
-        run: mv src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk src-tauri/gen/android/app/build/outputs/apk/universal/debug/bunnydsp.apk
+        run: mv src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk src-tauri/gen/android/app/build/outputs/apk/universal/release/bunnydsp.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: bunnydsp-apk
-          path: src-tauri/gen/android/app/build/outputs/apk/universal/debug/bunnydsp.apk
+          path: src-tauri/gen/android/app/build/outputs/apk/universal/release/bunnydsp.apk
 
   release:
     needs: [build, build-android]
