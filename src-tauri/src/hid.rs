@@ -3,6 +3,7 @@ use hidapi::{HidApi, HidDevice};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+#[cfg(target_os = "android")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(target_os = "android")]
@@ -31,6 +32,7 @@ pub const CUSTOM_SLOT: u8 = 0x03;
 pub const FILTER_COUNT: usize = 5;
 
 // Android JNI globals and connection status
+#[cfg(target_os = "android")]
 pub static ANDROID_CONNECTED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "android")]
 pub static JVM: OnceLock<JavaVM> = OnceLock::new();
