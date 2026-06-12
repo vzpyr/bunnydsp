@@ -61,7 +61,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          target: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -71,15 +71,14 @@ jobs:
 
       - name: Install NDK
         run: |
-          yes | sdkmanager "ndk;26.1.10909125"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;26.1.10909125"
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build Android APK
-        env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
         run: |
+          export NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125
           npx tauri android build --debug
 
       - name: Rename APK for release
