@@ -32,6 +32,12 @@ new ResizeObserver(drawEQ).observe(document.getElementById('eqCanvas'));
   c.addEventListener('mousemove', _onMouseMove);
   c.addEventListener('mouseup', _onMouseUp);
   c.addEventListener('mouseleave', _onMouseUp);
+  
+  // Touch support for Android
+  c.addEventListener('touchstart', _onTouchStart, { passive: false });
+  c.addEventListener('touchmove', _onTouchMove, { passive: false });
+  c.addEventListener('touchend', _onTouchEnd);
+  c.addEventListener('touchcancel', _onTouchEnd);
 })();
 
 function createBandHTML(i) {
@@ -151,7 +157,16 @@ function updateMicGain() {
 function _canvasCoords(e) {
   const c = document.getElementById('eqCanvas');
   const r = c.getBoundingClientRect();
-  return { mx: e.clientX - r.left, my: e.clientY - r.top, W: r.width, H: r.height };
+  let clientX = e.clientX;
+  let clientY = e.clientY;
+  if (e.touches && e.touches.length > 0) {
+    clientX = e.touches[0].clientX;
+    clientY = e.touches[0].clientY;
+  } else if (e.changedTouches && e.changedTouches.length > 0) {
+    clientX = e.changedTouches[0].clientX;
+    clientY = e.changedTouches[0].clientY;
+  }
+  return { mx: clientX - r.left, my: clientY - r.top, W: r.width, H: r.height };
 }
 
 function _onMouseDown(e) {
@@ -198,6 +213,28 @@ function _onMouseMove(e) {
 function _onMouseUp() {
   _drag = null;
   document.getElementById('eqCanvas').style.cursor = '';
+}
+
+function _onTouchStart(e) {
+  if (e.touches.length > 0) {
+    _onMouseDown(e);
+    if (_drag) {
+      e.preventDefault();
+    }
+  }
+}
+
+function _onTouchMove(e) {
+  if (e.touches.length > 0) {
+    _onMouseMove(e);
+    if (_drag) {
+      e.preventDefault();
+    }
+  }
+}
+
+function _onTouchEnd(e) {
+  _onMouseUp();
 }
 
 function markChanged() {
