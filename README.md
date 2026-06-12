@@ -1,8 +1,8 @@
 # Bunny DSP
 
-A standalone desktop EQ controller app for the **Tanchjim Bunny DSP** USB-C IEMs,
-written in Rust with a Tauri (webview) frontend. Communicates with the onboard
-KTMicro DSP over raw USB HID -- no drivers needed. Binary is ~6 MB.
+A standalone EQ controller app for the **Tanchjim Bunny DSP** USB-C IEMs,
+written in Rust with a Tauri (webview) frontend.
+It communicates with the onboard KTMicro DSP over raw USB HID.
 
 <p align="center">
   <img src="screenshots/screenshot1.png" alt="Bunny DSP UI Top" width="45%">
@@ -29,9 +29,7 @@ Each of the 5 bands supports:
 The UI graph renders a composite frequency response from all active bands using
 biquad filter math, ensuring that what you see on screen matches exactly what the
 hardware produces. Each active band also shows a faint individual response curve
-behind the composite, so you can see how bands overlap. Filter dots are draggable
--- grab one and move it horizontally to change frequency or vertically to adjust
-gain.
+behind the composite, so you can see how bands overlap. Filter dots are draggable.
 
 ---
 
